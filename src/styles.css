@@ -178,3 +178,70 @@ body {
   justify-self: center;
   margin-top: 8px;
 }
+
+/* ===== Admin Home ===== */
+.ah-wrap {
+  min-height: 100%;
+}
+
+.ah-header {
+  position: relative;
+  padding: clamp(16px, 3vw, 28px);
+  text-align: center;
+}
+
+.ah-logo {
+  position: absolute;
+  left: clamp(16px, 3vw, 32px);
+  top: clamp(12px, 2.5vw, 20px);
+  width: 120px;
+  height: 120px;
+  background: #d9d9d9;  /* gray placeholder */
+  border-radius: 6px;
+}
+
+.ah-title {
+  margin: 0;
+  font-weight: 600;
+  font-size: clamp(28px, 4vw, 54px);
+  letter-spacing: 0.2px;
+}
+
+.ah-logout {
+  position: absolute;
+  right: clamp(16px, 3vw, 32px);
+  top: clamp(12px, 2.5vw, 20px);
+}
+
+/* tiles area */
+.ah-main {
+  max-width: 1200px;
+  margin: 36px auto 40px;
+  padding: 0 clamp(12px, 3vw, 24px);
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: clamp(16px, 3vw, 36px);
+}
+
+/* big rounded blue "buttons" */
+.ah-tile {
+  background: #4f6fa6; /* slightly lighter than nav button */
+  color: #e7f0fa;
+  border: none;
+  border-radius: 48px;
+  padding: clamp(36px, 6vw, 72px) clamp(20px, 3vw, 36px);
+  height: 70vh;
+  min-height: 360px;
+  font-size: clamp(18px, 2.2vw, 28px);
+  cursor: pointer;
+  box-shadow: 0 2px 0 rgba(0,0,0,.12), inset 0 -1px 0 rgba(0,0,0,.05);
+  transition: transform .15s ease, filter .15s ease;
+}
+.ah-tile:hover { filter: brightness(1.05); }
+.ah-tile:active { transform: translateY(1px); }
+
+/* responsive: stack on small screens */
+@media (max-width: 980px) {
+  .ah-main { grid-template-columns: 1fr; }
+  .ah-logo { width: 90px; height: 90px; }
+}

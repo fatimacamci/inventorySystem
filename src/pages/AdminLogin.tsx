@@ -35,7 +35,7 @@ export default function AdminLogin() {
           onChange={(e) => setPassword(e.target.value)}
         />
 
-        <button type="submit" className="uh-navigate-btn al-login-btn">
+        <button type="submit" className="uh-navigate-btn al-login-btn" onClick={() => navigate("/admin")}>
           Login
         </button>
       </form>
