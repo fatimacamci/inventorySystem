@@ -15,7 +15,7 @@ Backend will be added later (likely Python + Flask / FastAPI).
 ---
 
 ## Requirements
-# Frontend
+#### Frontend
 Make sure you have:
 
 - **Node.js `20.19+`**  
@@ -40,7 +40,7 @@ http://localhost:5173
 - **Admin Password: adminpassword**
 Can be changed later but use the above password to access admin pages
 
-# Backend
+#### Backend
 1. cd backend
 2. python3 -m venv .venv 
 source .venv/bin/activate
