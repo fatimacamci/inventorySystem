@@ -28,33 +28,36 @@ If your Node version is lower than 20.19, install the correct version (recommend
 nvm install 20.19.0
 nvm use 20.19.0
 
-1. Install dependencies
+###### 1. Install dependencies
 npm install
 
-2. Start the dev server
+###### 2. Start the dev server
 npm run dev
 
-3. Open the app in browser
+###### 3. Open the app in browser
 http://localhost:5173
 
 - **Admin Password: adminpassword**
 Can be changed later but use the above password to access admin pages
 
 #### Backend
-1. cd backend
-2. python3 -m venv .venv 
+###### 1. Go to backend directory
+cd backend
+###### 2. Create virtual environment
+python3 -m venv .venv 
 source .venv/bin/activate
 (mac)
 OR 
 python -m venv .venv 
 .venv\Scripts\activate
 (PC)
-3. pip install -r requirements.txt
-4. create .env file in backend with following content:
+###### 3. Install requirements
+pip install -r requirements.txt
+###### 4. create .env file in backend with following content:
 ADMIN_PASSWORD=adminpassword
 ADMIN_JWT_SECRET=some-super-secret-random-string
 FLASK_ENV=development
-5. run project using
+###### 5. run project using
 source .venv/bin/activate
 python3 app.py
 (mac)
@@ -62,6 +65,8 @@ OR
 .venv\Scripts\activate
 python app.py
 (PC)
+###### 6. Create .env.local in root directory with the following content
+VITE_API_URL=http://localhost:5000/api
 
 
 ## Project Structure
