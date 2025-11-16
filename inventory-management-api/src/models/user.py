@@ -1,0 +1,12 @@
+from sqlalchemy import Column, Integer, String
+from src.models.base import Base
+
+class User(Base):
+    __tablename__ = 'users'
+
+    id = Column(Integer, primary_key=True, index=True)
+    first_name = Column(String(255), index=True)
+    last_name = Column(String(255), index=True)
+
+    def __repr__(self):
+        return f"<User(id={self.id}, first_name={self.first_name}, last_name={self.last_name})>"

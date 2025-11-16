@@ -10,7 +10,7 @@ This is a React-based inventory tracking system with a user-facing page to view 
 - **React Router** (page navigation)
 - **CSS** (custom styling)
 
-Backend will be added later (likely Python + Flask / FastAPI).
+Backend will be added later (Python + FastAPI).
 
 ---
 
@@ -42,31 +42,12 @@ Can be changed later but use the above password to access admin pages
 
 #### Backend
 ###### 1. Go to backend directory
-cd backend
-###### 2. Create virtual environment
-python3 -m venv .venv 
-source .venv/bin/activate
-(mac)
-OR 
-python -m venv .venv 
-.venv\Scripts\activate
-(PC)
-###### 3. Install requirements
-pip install -r requirements.txt
-###### 4. create .env file in backend with following content:
-ADMIN_PASSWORD=adminpassword
-ADMIN_JWT_SECRET=some-super-secret-random-string
-FLASK_ENV=development
-###### 5. run project using
-source .venv/bin/activate
-python3 app.py
-(mac)
-OR
-.venv\Scripts\activate
-python app.py
-(PC)
+cd inventory-management-api
+make venv
+make docker-up
+
 ###### 6. Create .env.local in root directory with the following content
-VITE_API_URL=http://localhost:5000/api
+VITE_API_URL=http://localhost:8000
 
 
 ## Project Structure

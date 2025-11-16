@@ -25,4 +25,4 @@ dist-ssr
 
 # Backend
 .venv/
-backend/.env
+inventory-management-api/.env

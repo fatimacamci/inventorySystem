@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: inventory_mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root_password
+      MYSQL_DATABASE: inventory_db
+      MYSQL_USER: inventory_user
+      MYSQL_PASSWORD: inventory_password
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - inventory_network
+
+  api:
+    build: .
+    container_name: inventory_api
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    depends_on:
+      - mysql
+    networks:
+      - inventory_network
+    # wait for mysql then start uvicorn
+    command: ["./scripts/wait_for_mysql.sh", "mysql", "3306", "60", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+volumes:
+  mysql_data:
+
+networks:
+  inventory_network:
