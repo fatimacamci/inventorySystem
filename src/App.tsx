@@ -5,10 +5,12 @@ import AdminHome from "./pages/AdminHome"
 import Requests from "./pages/Requests"
 import Inventory from "./pages/Inventory"
 import UserManagement from "./pages/UserManagement"
+import CheckedOut from "./pages/CheckedOut"
 
 export default function App() {
   return (
     <Routes>
+      <Route path="/admin/checked-out" element={<CheckedOut />} />
       <Route path="/" element={<UserHome />} />
       <Route path="/admin/login" element={<AdminLogin />} />
       <Route path="/admin" element={<AdminHome />} />

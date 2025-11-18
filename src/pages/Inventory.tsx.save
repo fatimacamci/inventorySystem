@@ -1,0 +1,381 @@
+import { useEffect, useState } from "react"
+import { useNavigate } from "react-router-dom"
+import type { Category, Item } from "../types"
+import { DEFAULT_CATEGORIES } from "../types"
+
+const API_BASE = import.meta.env.VITE_API_URL
+
+type EditableItem = {
+  id?: number
+  category: Category | null
+  itemName: string
+  quantity: number
+  notes: string
+}
+
+export default function Inventory() {
+  const navigate = useNavigate()
+
+  const [items, setItems] = useState<Item[]>([])
+  const [loading, setLoading] = useState<boolean>(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const [showPopup, setShowPopup] = useState(false)
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [newItem, setNewItem] = useState<EditableItem>({
+    category: DEFAULT_CATEGORIES[0],
+    itemName: "",
+    quantity: 0,
+    notes: "",
+  })
+
+  // --- Helpers ---------------------------------------------------
+
+  const normalizeItem = (raw: any): Item => {
+    // Try to map whatever the backend returns into our Item shape
+    const backendCategory = raw.category ?? {}
+    const catVal =
+      backendCategory.val ??
+      backendCategory.name ??
+      backendCategory.label ??
+      "Uncategorized"
+
+    const category: Category = { val: catVal }
+
+    return {
+      id: raw.id,
+      category,
+      itemName: raw.itemName ?? raw.name ?? "",
+      quantity: raw.quantity ?? 0,
+      notes: raw.notes ?? "",
+    }
+  }
+
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem("admin_token")
+    const headers: HeadersInit = {
+      "Content-Type": "application/json",
+    }
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`
+    }
+    return headers
+  }
+
+  // --- Load items from backend -----------------------------------
+
+  const fetchItems = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch(`${API_BASE}/inventory/`, {
+        method: "GET",
+        headers: getAuthHeaders(),
+      })
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.detail || body.error || "Failed to load inventory")
+      }
+
+      const data = await res.json()
+      const normalized: Item[] = (Array.isArray(data) ? data : []).map(normalizeItem)
+      setItems(normalized)
+    } catch (err: any) {
+      console.error(err)
+      setError(err.message ?? "Failed to load inventory")
+      setItems([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchItems()
+  }, [])
+
+  // --- CRUD actions (optimistic, minimal) ------------------------
+
+  const resetForm = () => {
+    setEditingId(null)
+    setNewItem({
+      category: DEFAULT_CATEGORIES[0],
+      itemName: "",
+      quantity: 0,
+      notes: "",
+    })
+  }
+
+  const closePopup = () => {
+    setShowPopup(false)
+    resetForm()
+  }
+
+  const openAdd = () => {
+    resetForm()
+    setShowPopup(true)
+  }
+
+  const openEdit = (id: number) => {
+    const item = items.find((i) => i.id === id)
+    if (!item) return
+    setEditingId(id)
+    setNewItem({
+      id: item.id,
+      category: item.category,
+      itemName: item.itemName,
+      quantity: item.quantity,
+      notes: item.notes ?? "",
+    })
+    setShowPopup(true)
+  }
+
+  const saveItem = async () => {
+    if (!newItem.itemName.trim()) return
+
+    const payload: any = {
+      itemName: newItem.itemName,
+      quantity: newItem.quantity,
+      notes: newItem.notes || "",
+      // Depending on backend schema, you may need categoryId here.
+      // categoryId: (newItem.category as any)?.id,
+    }
+
+    try {
+      setError(null)
+
+      if (editingId != null) {
+        // Update existing
+        const res = await fetch(`${API_BASE}/inventory/${editingId}`, {
+          method: "PUT",
+          headers: getAuthHeaders(),
+          body: JSON.stringify(payload),
+        })
+
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}))
+          throw new Error(body.detail || body.error || "Failed to update item")
+        }
+
+        const updated = normalizeItem(await res.json())
+        setItems((prev) => prev.map((i) => (i.id === updated.id ? updated : i)))
+      } else {
+        // Create new
+        const res = await fetch(`${API_BASE}/inventory/`, {
+          method: "POST",
+          headers: getAuthHeaders(),
+          body: JSON.stringify(payload),
+        })
+
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}))
+          throw new Error(body.detail || body.error || "Failed to create item")
+        }
+
+        const created = normalizeItem(await res.json())
+        setItems((prev) => [...prev, created])
+      }
+
+      closePopup()
+    } catch (err: any) {
+      console.error(err)
+      setError(err.message ?? "Error saving item")
+    }
+  }
+
+  const deleteItem = async (id: number) => {
+    if (!confirm("Delete this item?")) return
+    try {
+      setError(null)
+      const res = await fetch(`${API_BASE}/inventory/${id}`, {
+        method: "DELETE",
+        headers: getAuthHeaders(),
+      })
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.detail || body.error || "Failed to delete item")
+      }
+
+      // Backend returns deleted item, but we only need to update local state.
+      setItems((prev) => prev.filter((i) => i.id !== id))
+    } catch (err: any) {
+      console.error(err)
+      setError(err.message ?? "Error deleting item")
+    }
+  }
+
+  // --- Render ----------------------------------------------------
+
+  return (
+    <main style={{ padding: 24 }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 24,
+        }}
+      >
+        <h1 className="uh-title">Detachment 825 Inventory System</h1>
+        <button
+          className="uh-navigate-btn ah-logout"
+          onClick={() => navigate("/admin")}
+        >
+          Back
+        </button>
+      </div>
+
+      <h2 className="um-subtitle">Inventory</h2>
+
+      {error && (
+        <p style={{ color: "crimson", marginTop: 8, marginBottom: 16 }}>
+          {error}
+        </p>
+      )}
+
+      {loading ? (
+        <p>Loading inventory…</p>
+      ) : items.length === 0 ? (
+        <p style={{ color: "crimson" }}>No items found</p>
+      ) : (
+        <table className="uh-table" style={{ width: "100%", marginTop: 16 }}>
+          <thead>
+            <tr>
+              <th>Category</th>
+              <th>Item Name</th>
+              <th>Quantity</th>
+              <th>Notes</th>
+              <th style={{ width: 160 }}>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item) => (
+              <tr key={item.id}>
+                <td>{item.category?.val}</td>
+                <td>{item.itemName}</td>
+                <td>{item.quantity}</td>
+                <td>{item.notes}</td>
+                <td>
+                  <button
+                    className="uh-navigate-btn"
+                    style={{ marginRight: 8 }}
+                    onClick={() => openEdit(item.id)}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    className="uh-navigate-btn"
+                    onClick={() => deleteItem(item.id)}
+                  >
+                    Delete
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      <div style={{ marginTop: 24, display: "flex", gap: 12 }}>
+        <button className="uh-navigate-btn" onClick={openAdd}>
+          Add New Item
+        </button>
+        <button
+          className="uh-navigate-btn"
+          onClick={() => navigate("/admin/requests")}
+        >
+          Check Out Item
+        </button>
+      </div>
+
+      {/* Add/Edit popup */}
+      {showPopup && (
+        <div className="uh-modal-backdrop">
+          <div className="uh-modal">
+            <h3>{editingId ? "Edit Item" : "Add New Item"}</h3>
+
+            <label style={{ display: "block", marginTop: 12 }}>
+              Category:
+              <select
+                className="uh-input"
+                style={{ width: "100%", marginTop: 4 }}
+                value={newItem.category?.val || ""}
+                onChange={(e) => {
+                  const val = e.target.value
+                  const cat =
+                    DEFAULT_CATEGORIES.find((c) => c.val === val) ??
+                    ({ val } as Category)
+                  setNewItem({ ...newItem, category: cat })
+                }}
+              >
+                {DEFAULT_CATEGORIES.map((cat) => (
+                  <option key={cat.val} value={cat.val}>
+                    {cat.val}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label style={{ display: "block", marginTop: 12 }}>
+              Item Name:
+              <input
+                className="uh-input"
+                style={{ width: "100%", marginTop: 4 }}
+                type="text"
+                value={newItem.itemName}
+                onChange={(e) =>
+                  setNewItem({ ...newItem, itemName: e.target.value })
+                }
+              />
+            </label>
+
+            <label style={{ display: "block", marginTop: 12 }}>
+              Quantity:
+              <input
+                className="uh-input"
+                style={{ width: "100%", marginTop: 4 }}
+                type="number"
+                min={0}
+                value={newItem.quantity}
+                onChange={(e) =>
+                  setNewItem({ ...newItem, quantity: Number(e.target.value) })
+                }
+              />
+            </label>
+
+            <label style={{ display: "block", marginTop: 12 }}>
+              Notes:
+              <textarea
+                className="uh-input"
+                style={{ width: "100%", marginTop: 4 }}
+                rows={3}
+                value={newItem.notes}
+                onChange={(e) =>
+                  setNewItem({ ...newItem, notes: e.target.value })
+                }
+              />
+            </label>
+
+            <div
+              style={{
+                marginTop: 16,
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: 8,
+              }}
+            >
+              <button className="uh-navigate-btn" onClick={closePopup}>
+                Cancel
+              </button>
+              <button className="uh-navigate-btn" onClick={saveItem}>
+                {editingId ? "Save" : "Add"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </main>
+  )
+}
+

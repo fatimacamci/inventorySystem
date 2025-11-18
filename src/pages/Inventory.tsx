@@ -3,20 +3,22 @@ import { useState } from "react"
 import type { Category, Item } from "../types"
 import { DEFAULT_CATEGORIES } from "../types"
 
+const API_BASE = import.meta.env.VITE_API_URL
+
 export default function Inventory() {
     const navigate = useNavigate()
     const [categories, setCategories] = useState<Category[]>(DEFAULT_CATEGORIES)
     const [items, setItems] = useState<Item[]>([
-        { id: 1, category: DEFAULT_CATEGORIES[0] as Category, itemName: "iPhone 17", "quantity": 5, notes: "Reserved for students only" },
-        { id: 2, category: DEFAULT_CATEGORIES[2] as Category, itemName: "Bandaids", "quantity": 100, notes: "In case of emergency" },
+        { id: 1, category: DEFAULT_CATEGORIES[0] as Category, itemName: "iPhone 17", quantity: 5, notes: "Reserved for students only" },
+        { id: 2, category: DEFAULT_CATEGORIES[2] as Category, itemName: "Bandaids", quantity: 100, notes: "In case of emergency" },
     ])
 
     const [showPopup, setShowPopup] = useState(false)
-    const [newItem, setNewItem] = useState({ 
-        category: DEFAULT_CATEGORIES[0] as Category, 
+    const [newItem, setNewItem] = useState({
+        category: DEFAULT_CATEGORIES[0] as Category,
         itemName: "",
         quantity: 0,
-        notes: ""
+        notes: "",
     })
     const [editingId, setEditingId] = useState<number | null>(null)
 
@@ -74,6 +76,103 @@ export default function Inventory() {
         })
     }
 
+    // ---- NEW: check-out helper ----
+    const handleCheckout = async (item: Item) => {
+        const qtyStr = window.prompt("Quantity to check out:", "1")
+        if (!qtyStr) return
+
+        const qty = Number(qtyStr)
+        if (!Number.isFinite(qty) || qty <= 0 || qty > item.quantity) {
+            alert("Invalid quantity")
+            return
+        }
+
+        const token = localStorage.getItem("admin_token")
+        if (!token) {
+            alert("Not logged in as admin")
+            return
+        }
+
+        try {
+            const today = new Date().toISOString().slice(0, 10) // YYYY-MM-DD
+
+            // 1) POST to /checked-out/
+            const checkedOutPayload = {
+                item_name: item.itemName,
+                category_id: (item.category as any).id ?? 1,
+                quantity: qty,
+                pickup_date: today,
+                return_date: today, // minimal version
+                dispenser_id: 1,
+                receiver_id: 1,
+                notes: "",
+            }
+
+            const postRes = await fetch(`${API_BASE}/checked-out/`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify(checkedOutPayload),
+            })
+
+            if (!postRes.ok) {
+                const body = await postRes.json().catch(() => ({}))
+                console.error("POST /checked-out/ failed", postRes.status, body)
+                throw new Error(body.detail || "Failed to check out item")
+            }
+
+            // 2) PUT or DELETE /items/{id}
+            const remaining = item.quantity - qty
+
+            if (remaining > 0) {
+                const putPayload = {
+                    item_name: item.itemName,
+                    category_id: (item.category as any).id ?? 1,
+                    quantity: remaining,
+                    notes: item.notes,
+                }
+
+                const putRes = await fetch(`${API_BASE}/items/${item.id}`, {
+                    method: "PUT",
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${token}`,
+                    },
+                    body: JSON.stringify(putPayload),
+                })
+
+                if (!putRes.ok) {
+                    const body = await putRes.json().catch(() => ({}))
+                    console.error("PUT /items failed", putRes.status, body)
+                    throw new Error(body.detail || "Failed to update inventory")
+                }
+            } else {
+                const delRes = await fetch(`${API_BASE}/items/${item.id}`, {
+                    method: "DELETE",
+                    headers: { Authorization: `Bearer ${token}` },
+                })
+
+                if (!delRes.ok) {
+                    const body = await delRes.json().catch(() => ({}))
+                    console.error("DELETE /items failed", delRes.status, body)
+                    throw new Error(body.detail || "Failed to delete item")
+                }
+            }
+
+            // 3) Update local UI to match
+            setItems(prev =>
+                remaining > 0
+                    ? prev.map(i => i.id === item.id ? { ...i, quantity: remaining } : i)
+                    : prev.filter(i => i.id !== item.id)
+            )
+        } catch (err: any) {
+            console.error(err)
+            alert(err.message ?? "Failed to check out item")
+        }
+    }
+
     return (
         <div className="um-wrapper">
             <header className="uh-header um-header">
@@ -82,8 +181,10 @@ export default function Inventory() {
                     <h2 className="um-subtitle">Inventory</h2>
                 </div>
 
-                <button className="uh-navigate-btn ah-logout um-back-btn"
-                    onClick={() => navigate("/admin/")}>
+                <button
+                    className="uh-navigate-btn ah-logout um-back-btn"
+                    onClick={() => navigate("/admin/")}
+                >
                     Back
                 </button>
             </header>
@@ -108,14 +209,26 @@ export default function Inventory() {
                                     <td>{item.quantity}</td>
                                     <td>{item.notes}</td>
                                     <td>
-                                        <button className="um-edit-btn" 
-                                            onClick={() => openEdit(item.id)}>Edit
+                                        <button
+                                            className="um-edit-btn"
+                                            onClick={() => openEdit(item.id)}
+                                        >
+                                            Edit
                                         </button>
                                         <button
                                             className="um-edit-btn"
                                             onClick={() => deleteItem(item.id)}
                                             style={{ marginLeft: 8 }}
-                                        >Delete
+                                        >
+                                            Delete
+                                        </button>
+                                        {/* NEW: per-row Check Out */}
+                                        <button
+                                            className="um-edit-btn"
+                                            onClick={() => handleCheckout(item)}
+                                            style={{ marginLeft: 8 }}
+                                        >
+                                            Check Out
                                         </button>
                                     </td>
                                 </tr>
@@ -136,10 +249,10 @@ export default function Inventory() {
                         <button
                             className="uh-navigate-btn um-add-btn"
                             onClick={() => {
-                                alert("work in progress!")
+                                navigate("/admin/checked-out")
                             }}
                         >
-                            Check Out Item
+                            View Checked Out
                         </button>
                     </div>
                 </div>
@@ -153,7 +266,9 @@ export default function Inventory() {
                         Category:
                         <select
                             value={(newItem.category as Category)?.val || ""}
-                            onChange={(e) => setNewItem({ ...newItem, category: { val: e.target.value } })}
+                            onChange={(e) =>
+                                setNewItem({ ...newItem, category: { val: e.target.value } })
+                            }
                             style={{ marginLeft: 8 }}
                         >
                             {categories.map((cat) => (
@@ -183,7 +298,7 @@ export default function Inventory() {
                                 cursor: "pointer",
                             }}
                         >
-                        +
+                            +
                         </button>
                     </label>
                     <label>
@@ -199,7 +314,9 @@ export default function Inventory() {
                             type="number"
                             value={String(newItem.quantity ?? 0)}
                             min={0}
-                            onChange={(e) => setNewItem({ ...newItem, quantity: Number(e.target.value) })}
+                            onChange={(e) =>
+                                setNewItem({ ...newItem, quantity: Number(e.target.value) })
+                            }
                         />
                     </label>
                     <label>
@@ -220,3 +337,4 @@ export default function Inventory() {
         </div>
     )
 }
+
