@@ -20,7 +20,7 @@ services:
     build: .
     container_name: inventory_api
     env_file:
-      - ../.env     # <-- FIX HERE
+      - .env     # <-- FIX HERE
     ports:
       - "8000:8000"
     depends_on:
