@@ -29,13 +29,6 @@ export default function AdminHome() {
       <main className="ah-main">
         <button
           className="ah-tile"
-          onClick={() => navigate("/admin/requests")}
-        >
-          Requests
-        </button>
-
-        <button
-          className="ah-tile"
           onClick={() => navigate("/admin/inventory")}
         >
           Inventory
