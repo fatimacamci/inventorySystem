@@ -1,55 +1,110 @@
+
+
 import { useNavigate } from "react-router-dom"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import type { Category, Item } from "../types"
 import { DEFAULT_CATEGORIES } from "../types"
+import { apiGet, apiSend } from "../api"
 
 const API_BASE = import.meta.env.VITE_API_URL
+
 
 export default function Inventory() {
     const navigate = useNavigate()
     const [categories, setCategories] = useState<Category[]>(DEFAULT_CATEGORIES)
-    const [items, setItems] = useState<Item[]>([
-        { id: 1, category: DEFAULT_CATEGORIES[0] as Category, itemName: "iPhone 17", quantity: 5, notes: "Reserved for students only" },
-        { id: 2, category: DEFAULT_CATEGORIES[2] as Category, itemName: "Bandaids", quantity: 100, notes: "In case of emergency" },
-    ])
+    const [items, setItems] = useState<Item[]>([])
 
     const [showPopup, setShowPopup] = useState(false)
     const [newItem, setNewItem] = useState({
-        category: DEFAULT_CATEGORIES[0] as Category,
+        category: null as any,
         itemName: "",
         quantity: 0,
         notes: "",
     })
     const [editingId, setEditingId] = useState<number | null>(null)
 
-    const saveItem = () => {
-        if (!newItem.itemName || typeof newItem.quantity !== "number") return
+    // For checkout popup
+    const [checkoutItem, setCheckoutItem] = useState<Item | null>(null)
+    const [checkoutQty, setCheckoutQty] = useState(1)
+    const [checkoutUser, setCheckoutUser] = useState<number | null>(null)
+    const [users, setUsers] = useState<{ id: number; first_name: string; last_name: string }[]>([])
+    const [checkoutError, setCheckoutError] = useState<string | null>(null)
+
+    // Fetch items from backend on mount
+    // Fetch categories and items from backend on mount
+    useEffect(() => {
+        const fetchAll = async () => {
+            try {
+                const [catData, itemData] = await Promise.all([
+                    apiGet("/categories/"),
+                    apiGet("/items/")
+                ])
+                setCategories(catData)
+                // Map backend fields to frontend fields and attach full category object
+                const itemsWithCategory = itemData.map((item: any) => {
+                    const cat = catData.find((c: any) => c.id === item.category_id)
+                    return {
+                        ...item,
+                        itemName: item.item_name,
+                        pickupDate: item.pickup_date,
+                        returnDate: item.return_date,
+                        category: cat,
+                    }
+                })
+                setItems(itemsWithCategory)
+            } catch (err) {
+                // fallback: do nothing
+            }
+        }
+        fetchAll()
+    }, [])
+
+    const saveItem = async () => {
+        if (!newItem.itemName || typeof newItem.quantity !== "number" || !newItem.category) return
+
+        // Use the full category object from categories
+        const selectedCat = categories.find((c) => c.id === (newItem.category as any).id || c.val === (newItem.category as any).val)
+        if (!selectedCat) return
 
         if (editingId != null) {
-            // update existing
+            // update existing (local only)
             setItems(items.map(i => i.id === editingId ? {
                 ...i,
-                category: newItem.category as Category,
+                category: selectedCat,
                 itemName: newItem.itemName || i.itemName,
                 quantity: newItem.quantity || i.quantity,
                 notes: newItem.notes ?? i.notes,
             } : i))
         } else {
-            // add new
-            const item: Item = {
-                id: Date.now(),
-                category: newItem.category as Category,
-                itemName: newItem.itemName || "",
-                quantity: newItem.quantity || 0,
-                notes: newItem.notes || "",
+            // add new: persist to backend
+            try {
+                const payload = {
+                    item_name: newItem.itemName,
+                    category_id: selectedCat.id,
+                    quantity: newItem.quantity,
+                    notes: newItem.notes,
+                }
+                const created = await apiSend("POST", "/items/", payload)
+                // Map backend fields to frontend fields and attach category
+                setItems([
+                    ...items,
+                    {
+                        ...created,
+                        itemName: created.item_name,
+                        pickupDate: created.pickup_date,
+                        returnDate: created.return_date,
+                        category: selectedCat,
+                    }
+                ])
+            } catch (err) {
+                alert("Failed to add item: " + (err as any).message)
             }
-            setItems([...items, item])
         }
 
         // reset state
         setShowPopup(false)
         setEditingId(null)
-        setNewItem({ category: DEFAULT_CATEGORIES[0] as Category, itemName: "", quantity: 0, notes: "" })
+        setNewItem({ category: categories[0], itemName: "", quantity: 0, notes: "" })
     }
 
     const openEdit = (id: number) => {
@@ -76,38 +131,69 @@ export default function Inventory() {
         })
     }
 
-    // ---- NEW: check-out helper ----
-    const handleCheckout = async (item: Item) => {
-        const qtyStr = window.prompt("Quantity to check out:", "1")
-        if (!qtyStr) return
+    // ---- NEW: check-out helper with user selection ----
+    const openCheckout = async (item: Item) => {
+        setCheckoutError(null)
+        setCheckoutItem(item)
+        setCheckoutQty(1)
+        // Fetch users if not already loaded
+        if (users.length === 0) {
+            try {
+                const data = await apiGet("/users/")
+                setUsers(data)
+            } catch (err) {
+                setUsers([])
+            }
+        }
+        setCheckoutUser(null)
+    }
 
-        const qty = Number(qtyStr)
-        if (!Number.isFinite(qty) || qty <= 0 || qty > item.quantity) {
-            alert("Invalid quantity")
+    const handleCheckoutSubmit = async () => {
+        if (!checkoutItem || !checkoutUser) {
+            setCheckoutError("Please select a user.")
             return
         }
-
+        if (!Number.isFinite(checkoutQty) || checkoutQty <= 0 || checkoutQty > checkoutItem.quantity) {
+            setCheckoutError("Invalid quantity.")
+            return
+        }
         const token = localStorage.getItem("admin_token")
         if (!token) {
-            alert("Not logged in as admin")
+            setCheckoutError("Not logged in as admin.")
             return
         }
-
         try {
-            const today = new Date().toISOString().slice(0, 10) // YYYY-MM-DD
-
-            // 1) POST to /checked-out/
-            const checkedOutPayload = {
-                item_name: item.itemName,
-                category_id: (item.category as any).id ?? 1,
-                quantity: qty,
-                pickup_date: today,
-                return_date: today, // minimal version
-                dispenser_id: 1,
-                receiver_id: 1,
-                notes: "",
+            setCheckoutError(null)
+            const today = new Date()
+            const pickupDateStr = today.toISOString().slice(0, 10)
+            // Calculate return date (one week after pickup)
+            const returnDate = new Date(today)
+            returnDate.setDate(today.getDate() + 7)
+            const returnDateStr = returnDate.toISOString().slice(0, 10)
+            // Find the correct category_id from categories
+            let category_id = undefined
+            if (checkoutItem.category && (checkoutItem.category as any).id) {
+                category_id = (checkoutItem.category as any).id
+            } else {
+                // fallback: match by value
+                const cat = categories.find(c => c.val === (checkoutItem.category as any).val)
+                if (cat) category_id = cat.id
             }
-
+            if (!category_id) {
+                setCheckoutError("Could not determine category ID for this item.")
+                return
+            }
+            // POST to /checked-out/
+            const checkedOutPayload = {
+                item_name: checkoutItem.itemName,
+                category_id,
+                quantity: checkoutQty,
+                pickup_date: pickupDateStr,
+                return_date: returnDateStr,
+                dispenser_id: 1, // TODO: support real dispenser
+                receiver_id: checkoutUser,
+                notes: checkoutItem.notes,
+            }
             const postRes = await fetch(`${API_BASE}/checked-out/`, {
                 method: "POST",
                 headers: {
@@ -116,25 +202,21 @@ export default function Inventory() {
                 },
                 body: JSON.stringify(checkedOutPayload),
             })
-
             if (!postRes.ok) {
                 const body = await postRes.json().catch(() => ({}))
-                console.error("POST /checked-out/ failed", postRes.status, body)
-                throw new Error(body.detail || "Failed to check out item")
+                setCheckoutError(body.detail || "Failed to check out item")
+                return
             }
-
-            // 2) PUT or DELETE /items/{id}
-            const remaining = item.quantity - qty
-
+            // Update inventory
+            const remaining = checkoutItem.quantity - checkoutQty
             if (remaining > 0) {
                 const putPayload = {
-                    item_name: item.itemName,
-                    category_id: (item.category as any).id ?? 1,
+                    item_name: checkoutItem.itemName,
+                    category_id,
                     quantity: remaining,
-                    notes: item.notes,
+                    notes: checkoutItem.notes,
                 }
-
-                const putRes = await fetch(`${API_BASE}/items/${item.id}`, {
+                const putRes = await fetch(`${API_BASE}/items/${checkoutItem.id}`, {
                     method: "PUT",
                     headers: {
                         "Content-Type": "application/json",
@@ -142,34 +224,31 @@ export default function Inventory() {
                     },
                     body: JSON.stringify(putPayload),
                 })
-
                 if (!putRes.ok) {
                     const body = await putRes.json().catch(() => ({}))
-                    console.error("PUT /items failed", putRes.status, body)
-                    throw new Error(body.detail || "Failed to update inventory")
+                    setCheckoutError(body.detail || "Failed to update inventory")
+                    return
                 }
             } else {
-                const delRes = await fetch(`${API_BASE}/items/${item.id}`, {
+                const delRes = await fetch(`${API_BASE}/items/${checkoutItem.id}`, {
                     method: "DELETE",
                     headers: { Authorization: `Bearer ${token}` },
                 })
-
                 if (!delRes.ok) {
                     const body = await delRes.json().catch(() => ({}))
-                    console.error("DELETE /items failed", delRes.status, body)
-                    throw new Error(body.detail || "Failed to delete item")
+                    setCheckoutError(body.detail || "Failed to delete item")
+                    return
                 }
             }
-
-            // 3) Update local UI to match
+            // Update UI
             setItems(prev =>
                 remaining > 0
-                    ? prev.map(i => i.id === item.id ? { ...i, quantity: remaining } : i)
-                    : prev.filter(i => i.id !== item.id)
+                    ? prev.map(i => i.id === checkoutItem.id ? { ...i, quantity: remaining } : i)
+                    : prev.filter(i => i.id !== checkoutItem.id)
             )
+            setCheckoutItem(null)
         } catch (err: any) {
-            console.error(err)
-            alert(err.message ?? "Failed to check out item")
+            setCheckoutError(err.message ?? "Failed to check out item")
         }
     }
 
@@ -225,7 +304,7 @@ export default function Inventory() {
                                         {/* NEW: per-row Check Out */}
                                         <button
                                             className="um-edit-btn"
-                                            onClick={() => handleCheckout(item)}
+                                            onClick={() => openCheckout(item)}
                                             style={{ marginLeft: 8 }}
                                         >
                                             Check Out
@@ -265,14 +344,15 @@ export default function Inventory() {
                     <label>
                         Category:
                         <select
-                            value={(newItem.category as Category)?.val || ""}
-                            onChange={(e) =>
-                                setNewItem({ ...newItem, category: { val: e.target.value } })
-                            }
+                            value={newItem.category ? (newItem.category as any).id : ""}
+                            onChange={(e) => {
+                                const cat = categories.find((c) => c.id === Number(e.target.value))
+                                setNewItem({ ...newItem, category: cat || null })
+                            }}
                             style={{ marginLeft: 8 }}
                         >
                             {categories.map((cat) => (
-                                <option key={cat.val} value={cat.val}>
+                                <option key={cat.id} value={cat.id}>
                                     {cat.val}
                                 </option>
                             ))}
@@ -281,16 +361,22 @@ export default function Inventory() {
                         <button
                             type="button"
                             title="Add category"
-                            onClick={() => {
+                            onClick={async () => {
                                 const name = prompt("New category name")
                                 if (!name) return
                                 if (categories.some((c) => c.val === name.trim())) {
                                     alert("Category already exists")
                                     return
                                 }
-                                const newCat: Category = { val: name.trim() }
-                                setCategories((s) => [...s, newCat])
-                                setNewItem({ ...newItem, category: newCat })
+                                try {
+                                    const created = await apiSend("POST", "/categories/", { val: name.trim() })
+                                    // Refetch categories from backend to get real id
+                                    const updated = await apiGet("/categories/")
+                                    setCategories(updated)
+                                    setNewItem({ ...newItem, category: created })
+                                } catch (err) {
+                                    alert("Failed to add category: " + (err as any).message)
+                                }
                             }}
                             style={{
                                 marginLeft: 4,
@@ -331,6 +417,46 @@ export default function Inventory() {
                     <div className="um-popup-buttons">
                         <button onClick={saveItem}>{editingId ? "Save" : "Add"}</button>
                         <button onClick={closePopup}>Cancel</button>
+                    </div>
+                </div>
+            )}
+            {/* Checkout Popup */}
+            {checkoutItem && (
+                <div className="um-popup">
+                    <h3>Check Out Item</h3>
+                    <div style={{ marginBottom: 12 }}>
+                        <b>{checkoutItem.itemName}</b> (Available: {checkoutItem.quantity})
+                    </div>
+                    <label>
+                        Quantity:
+                        <input
+                            type="number"
+                            min={1}
+                            max={checkoutItem.quantity}
+                            value={checkoutQty}
+                            onChange={e => setCheckoutQty(Number(e.target.value))}
+                            style={{ marginLeft: 8 }}
+                        />
+                    </label>
+                    <label style={{ display: "block", marginTop: 12 }}>
+                        User:
+                        <select
+                            value={checkoutUser ?? ""}
+                            onChange={e => setCheckoutUser(Number(e.target.value))}
+                            style={{ marginLeft: 8 }}
+                        >
+                            <option value="">Select user</option>
+                            {users.map(u => (
+                                <option key={u.id} value={u.id}>
+                                    {u.first_name} {u.last_name}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+                    {checkoutError && <div style={{ color: "crimson", marginTop: 8 }}>{checkoutError}</div>}
+                    <div className="um-popup-buttons" style={{ marginTop: 16 }}>
+                        <button onClick={handleCheckoutSubmit}>Check Out</button>
+                        <button onClick={() => setCheckoutItem(null)}>Cancel</button>
                     </div>
                 </div>
             )}

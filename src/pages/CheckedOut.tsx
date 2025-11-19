@@ -25,6 +25,7 @@ type CheckedOutRow = {
   pickupDate: string
   returnDate: string
   notes: string | null
+  receiverId: number
 }
 
 // API → UI mapping
@@ -36,6 +37,7 @@ const fromApi = (api: CheckedOutApi): CheckedOutRow => ({
   pickupDate: api.pickup_date,
   returnDate: api.return_date,
   notes: api.notes,
+  receiverId: api.receiver_id,
 })
 
 export default function CheckedOut() {
@@ -44,6 +46,8 @@ export default function CheckedOut() {
   const [rows, setRows] = useState<CheckedOutRow[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [users, setUsers] = useState<{ id: number; first_name: string; last_name: string }[]>([])
+  const [categories, setCategories] = useState<{ id: number; val: string }[]>([])
 
   const loadCheckedOut = async () => {
     try {
@@ -57,20 +61,33 @@ export default function CheckedOut() {
         return
       }
 
-      const res = await fetch(`${API_BASE}/checked-out/`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      })
+      // Fetch checked out, users, and categories in parallel
+      const [checkedRes, usersRes, catsRes] = await Promise.all([
+        fetch(`${API_BASE}/checked-out/`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${API_BASE}/users/`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${API_BASE}/categories/`, { headers: { Authorization: `Bearer ${token}` } }),
+      ])
 
-      const body = await res.json().catch(() => ({}))
+      const checkedBody = await checkedRes.json().catch(() => ([]))
+      const usersBody = await usersRes.json().catch(() => ([]))
+      const catsBody = await catsRes.json().catch(() => ([]))
 
-      if (!res.ok) {
-        console.error("GET /checked-out/ failed", res.status, body)
-        throw new Error(body.detail || "Failed to load checked-out items")
+      if (!checkedRes.ok) {
+        console.error("GET /checked-out/ failed", checkedRes.status, checkedBody)
+        throw new Error(checkedBody.detail || "Failed to load checked-out items")
+      }
+      if (!usersRes.ok) {
+        console.error("GET /users/ failed", usersRes.status, usersBody)
+        throw new Error(usersBody.detail || "Failed to load users")
+      }
+      if (!catsRes.ok) {
+        console.error("GET /categories/ failed", catsRes.status, catsBody)
+        throw new Error(catsBody.detail || "Failed to load categories")
       }
 
-      setRows((body as CheckedOutApi[]).map(fromApi))
+      setUsers(usersBody)
+      setCategories(catsBody)
+      setRows((checkedBody as CheckedOutApi[]).map(fromApi))
     } catch (err: any) {
       setError(err.message ?? "Failed to load checked-out items")
       setRows([])
@@ -150,8 +167,9 @@ export default function CheckedOut() {
               <thead>
                 <tr>
                   <th>Item Name</th>
-                  <th>Category ID</th>
+                  <th>Category</th>
                   <th>Quantity</th>
+                  <th>Checked Out By</th>
                   <th>Pickup Date</th>
                   <th>Return Date</th>
                   <th>Notes</th>
@@ -159,25 +177,30 @@ export default function CheckedOut() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row) => (
-                  <tr key={row.id}>
-                    <td>{row.itemName}</td>
-                    <td>{row.categoryId}</td>
-                    <td>{row.quantity}</td>
-                    <td>{formatDate(row.pickupDate)}</td>
-                    <td>{formatDate(row.returnDate)}</td>
-                    <td>{row.notes || "-"}</td>
-                    <td>
-                      <button
-                        className="uh-navigate-btn"
-                        type="button"
-                        onClick={() => handleCheckIn(row.id)}
-                      >
-                        Check In
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {rows.map((row) => {
+                  const user = users.find(u => u.id === row.receiverId)
+                  const cat = categories.find(c => c.id === row.categoryId)
+                  return (
+                    <tr key={row.id}>
+                      <td>{row.itemName}</td>
+                      <td>{cat ? cat.val : row.categoryId}</td>
+                      <td>{row.quantity}</td>
+                      <td>{user ? `${user.first_name} ${user.last_name}` : row.receiverId || '-'}</td>
+                      <td>{formatDate(row.pickupDate)}</td>
+                      <td>{formatDate(row.returnDate)}</td>
+                      <td>{row.notes || "-"}</td>
+                      <td>
+                        <button
+                          className="uh-navigate-btn"
+                          type="button"
+                          onClick={() => handleCheckIn(row.id)}
+                        >
+                          Check In
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>

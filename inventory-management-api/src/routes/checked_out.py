@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from src.database import get_db
 from src.schemas import CheckedOutCreate, CheckedOutRead
 from src.models.checked_out_inventory import CheckedOutInventory
+from src.models.item import Item
 
 router = APIRouter()
 
@@ -34,6 +35,30 @@ def delete_item(checked_out_id: int, db: Session = Depends(get_db)):
     db_item = db.query(CheckedOutInventory).filter(CheckedOutInventory.id == checked_out_id).first()
     if not db_item:
         raise HTTPException(status_code=404, detail="Item not found")
+
+    # Find matching item (by item_name and category_id)
+    item = db.query(Item).filter(
+        Item.item_name == db_item.item_name,
+        Item.category_id == db_item.category_id
+    ).first()
+    if item:
+        item.quantity += db_item.quantity
+        db.commit()
+    else:
+        # Recreate the item if it was deleted (all quantity checked out)
+        new_item = Item(
+            item_name=db_item.item_name,
+            category_id=db_item.category_id,
+            quantity=db_item.quantity,
+            notes=db_item.notes,
+            pickup_date=None,
+            return_date=None,
+            dispenser_id=None,
+            receiver_id=None,
+        )
+        db.add(new_item)
+        db.commit()
+
     db.delete(db_item)
     db.commit()
     return db_item
