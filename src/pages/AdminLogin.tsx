@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom"
 import { useState } from "react"
 import "../styles.css"
+import logo from "../assets/logo.png"
 
 export default function AdminLogin() {
   const navigate = useNavigate()
@@ -47,8 +48,8 @@ export default function AdminLogin() {
         Return to User Page
       </button>
 
-      {/* logo placeholder */}
-      <div className="al-logo" aria-label="Logo placeholder" />
+      {/* logo image */}
+      <img src={logo} alt="Detachment 825 logo" className="al-logo" />
 
       <h1 className="al-title">Detachment 825 Inventory System</h1>
       <p className="al-subtitle">Log in</p>
